@@ -1,7 +1,8 @@
-from dash import Dash, html, dcc, Input, Output, callback
+from dash import Dash, html, dcc, Input, Output, callback, no_update
 import pandas as pd
 import plotly.express as px
-
+import time
+import dash_bootstrap_components as dbc
 
 def load_data():
     data = {
@@ -13,22 +14,16 @@ def load_data():
         'Diabetes': [10.5, 9.8, 9.0, 6.5, 5.0],           
         'Heart Disease': [6.5, 6.0, 5.8, 4.0, 3.5],        
         'Vaccination': [85, 98, 80, 95, 96]   
-
     }
     return pd.DataFrame(data)
 
 app = Dash(__name__, external_stylesheets=['https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css'])
 df = load_data()
 
-app.layout = html.Div([
-    
+app.layout = html.Div([    
     html.Div([
         html.H1("Global Health Metric Dashboard", className="text-center mb-4"),
-
-        
         html.Div([
-
-            
             html.Div([
                 html.Label("Select Countries", className="form-label"),
                 dcc.Dropdown(
@@ -40,7 +35,6 @@ app.layout = html.Div([
                 )
             ], className="col-md-6 mb-3"),
 
-            
             html.Div([
                 html.Label("Select Indicator", className="form-label"),
                 dcc.Dropdown(
@@ -55,10 +49,10 @@ app.layout = html.Div([
                     ],
                     value='Life Expectancy',
                     className="form-select"
-                )
+                ),
+                dbc.Button('Show Visualization', id='show-visualization-button', n_clicks=0, className='mb-4'),
             ], className="col-md-6 mb-3"),
 
-            
             html.Div([
                 html.Label("Select Year Range", className="form-label"),
                 dcc.RangeSlider(
@@ -72,12 +66,17 @@ app.layout = html.Div([
 
         ], className="card card-body mb-4"),
 
-        
         html.Div([
-            dcc.Graph(id="health-graph", className="mb-4")
+            dcc.Loading(
+                id="loading-1",
+                type="circle",
+                children=[
+                    dcc.Graph(id="health-graph", className="mb-4")  # Graph will be updated here
+                ],
+                overlay_style={"visibility": "visible", "opacity": .5, "backgroundColor": "white"},
+            )
         ], className="card card-body"),
 
-       
         html.Div([
             html.Button("Download Graph Data", id='download-button', className="btn btn-primary mb-3"),
             dcc.Download(id='download-graph')
@@ -86,79 +85,59 @@ app.layout = html.Div([
     ], className="container mt-4")
 ])
 
+
 @app.callback(
-    Output('health-graph', 'figure'),
+    Output("health-graph", "figure"),
+    Input('show-visualization-button', 'n_clicks'),
     Input('country-dropdown', 'value'),
     Input('indicator-dropdown', 'value'),
     Input('year-slider', 'value')
 )
-def update_graph(selected_country, selected_indicator, selected_year):
-    
+def update_graph(n_clicks, selected_countries, selected_indicator, selected_year):
+    time.sleep(1) 
+
+    if not selected_countries or not selected_indicator:
+        return no_update  
+
     filtered_df = df[
-        (df['country'].isin(selected_country)) &
+        (df['country'].isin(selected_countries)) &
         (df['Year'] >= selected_year[0]) &
         (df['Year'] <= selected_year[1])
     ]
 
-  
-    max_value = filtered_df[selected_indicator].max()
-
-    if selected_indicator == 'Life Expectancy' or selected_indicator == 'Infant Mortality':
-        fig = px.bar(
-            filtered_df,
-            x='Year',
-            y=selected_indicator,      
-            color='country',
-            title=f'{selected_indicator} Over Time'
-        )
-    elif selected_indicator in ['Access to Healthcare', 'Diabetes', 'Heart Disease', 'Vaccination']:
+    
+    if n_clicks % 2 == 1:  
         fig = px.bar(
             filtered_df,
             x='Year',
             y=selected_indicator,
             color='country',
-            title=f'{selected_indicator} Over Time'
+            title=f'{selected_indicator} Over Time (Bar Graph)'
         )
-    
+    else:  
+        fig = px.scatter(
+            filtered_df,
+            x='Year',
+            y=selected_indicator,
+            color='country',
+            title=f'{selected_indicator} Over Time (Line Graph)'
+        )
+
     fig.update_layout(
         xaxis_title='Year',
-        yaxis_title=selected_indicator,
-        shapes=[  
-            {
-                'type': 'line',
-                'x0': 2022,  
-                'y0': 0,
-                'x1': 2022,
-                'y1': max_value,
-                'line': {'color': 'Red', 'width': 2}
-            }
-        ],
-        annotations=[ 
-            {
-                'x': 2022,  
-                'y': max_value,
-                'xref': 'x',
-                'yref': 'y',
-                'text': 'Policy Change',
-                'showarrow': True,
-                'arrowhead': 2,
-                'ax': 0,
-                'ay': -40
-            }
-        ]
+        yaxis_title=selected_indicator
     )
 
-    return fig
+    return fig  
+
 
 @app.callback(
-    Output('download-graph','data'),
-    Input('download-button','n_clicks'),
-    prevent_initial_call=True,
-
-)  
-
-def func(n_clicks):
-    return dcc.send_data_frame(df.to_csv,'mydf.csv')
+    Output('download-graph', 'data'),
+    Input('download-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def download_data(n_clicks):
+    return dcc.send_data_frame(df.to_csv, 'health_metrics.csv')
 
 if __name__ == '__main__':
     app.run(debug=True)
